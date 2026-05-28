@@ -1,0 +1,494 @@
+{
+  "name": "candid-email-approval",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "candid-email-approval",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -144,
+        32
+      ],
+      "id": "7a2269e7-f7fa-4ef9-92fa-9ca230ad0cc0",
+      "name": "candid-email-approval",
+      "webhookId": "1b2e7708-2164-4567-a6f8-1047438c6777"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json.body.payload;\nconst payload = JSON.parse(raw);\n\nconst payloadType = payload.type;\n\n// ── Handle modal submission (Edit path) ──────────────────────────────\nif (payloadType === 'view_submission') {\n  const metadata = payload.view.private_metadata.split('|');\n  const leadEmail = metadata[0] || '';\n  const channelId = metadata[1] || '';\n  const messageTs = metadata[2] || '';\n\n  const emailSubject = payload.view.state.values.subject_block.subject_input.value;\n  const emailBody = payload.view.state.values.body_block.body_input.value;\n\n  return {\n    action: 'send_edited_email',\n    clickedBy: payload.user.username,\n    channelId,\n    messageTs,\n    leadEmail,\n    emailSubject,\n    emailBody,\n    leadName: '',\n    leadCompany: ''\n  };\n}\n\n// ── Handle button clicks (Approve / Edit / Reject) ────────────────────\nconst action = payload.actions[0].action_id;\nconst clickedBy = payload.user.username;\nconst channelId = payload.container.channel_id;\nconst messageTs = payload.container.message_ts;\nconst triggerId = payload.trigger_id;\n\nconst actionValue = payload.actions[0].value || '';\nconst valueParts = actionValue.split('|');\nconst leadEmail = valueParts[1] || '';\n\nconst blocks = payload.message.blocks || [];\nlet emailSubject = '';\nlet emailBody = '';\nlet leadName = '';\nlet leadCompany = '';\n\ntry {\n  const fieldsBlock = blocks[1];\n  leadName = fieldsBlock.fields[0].text.replace('*Lead:*\\n', '');\n  leadCompany = fieldsBlock.fields[1].text.replace('*Company:*\\n', '');\n\n  const emailBlock = blocks[4].text.text;\n  const subjectMatch = emailBlock.match(/\\*Subject:\\*\\s(.+)/);\n  emailSubject = subjectMatch ? subjectMatch[1].trim() : 'Your Live Marketing Strategy Session';\n\n  emailBody = emailBlock\n    .replace(/\\*Proposed email:?\\*\\n\\*Subject:\\*[^\\n]+\\n\\n/, '')\n    .replace(/\\*Proposed email to send:\\*\\n\\*Subject:\\*[^\\n]+\\n\\n/, '')\n    .trim();\n\n  emailBody = emailBody.replace(/\\\\n/g, '\\n');\n} catch(e) {\n  emailSubject = 'Your Live Marketing Strategy Session';\n  emailBody = 'Thank you for applying. Our team will be in touch shortly.\\n\\nThe Candid Team';\n}\n\nreturn {\n  action,\n  clickedBy,\n  channelId,\n  messageTs,\n  triggerId,\n  leadEmail,\n  emailSubject,\n  emailBody,\n  leadName,\n  leadCompany\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        32
+      ],
+      "id": "b30dced6-a5e9-464a-bf2b-c22cef0243e8",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "approve_email",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "028d33b5-ad75-4226-be6d-9a86123ac166"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "5514a35d-af5b-4b19-a989-688bc46b279a",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "edit_email",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "e9417d0a-76a1-4b0f-89a9-1f68a07544b5",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "reject_email",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "17d9e5dd-6dfb-4576-b4c7-64eb74b0bf9a",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "send_edited_email",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        0
+      ],
+      "id": "996b2d7c-f698-43e3-a36a-ca54c6801ed3",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SLACK_BOT_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.channelId, thread_ts: $json.messageTs, text: \"✅ *Email approved by \" + $json.clickedBy + \"* — sending now to \" + $json.leadName + \" at \" + $json.leadCompany + \".\" }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        832,
+        -176
+      ],
+      "id": "0d460423-3387-4cfd-9385-96fa447169b5",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/views.open",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SLACK_BOT_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  trigger_id: JSON.parse($('candid-email-approval').item.json.body.payload).trigger_id,\n  view: {\n    type: \"modal\",\n    callback_id: \"email_edit_modal\",\n    title: { type: \"plain_text\", text: \"Edit Confirmation Email\" },\n    submit: { type: \"plain_text\", text: \"Send Email\" },\n    close: { type: \"plain_text\", text: \"Cancel\" },\n    private_metadata: $json.leadEmail + \"|\" + $json.channelId + \"|\" + $json.messageTs,\n    blocks: [\n      {\n        type: \"input\",\n        block_id: \"subject_block\",\n        label: { type: \"plain_text\", text: \"Subject\" },\n        element: {\n          type: \"plain_text_input\",\n          action_id: \"subject_input\",\n          initial_value: $json.emailSubject\n        }\n      },\n      {\n        type: \"input\",\n        block_id: \"body_block\",\n        label: { type: \"plain_text\", text: \"Email Body\" },\n        element: {\n          type: \"plain_text_input\",\n          action_id: \"body_input\",\n          multiline: true,\n          initial_value: $json.emailBody\n        }\n      }\n    ]\n  }\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        752,
+        -16
+      ],
+      "id": "4ae5c161-db57-44c3-a1ca-c9576484c987",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SLACK_BOT_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=={{ JSON.stringify({ channel: $json.channelId, thread_ts: $json.messageTs, text: \"❌ *Email rejected by \" + $json.clickedBy + \"* — this lead has been logged in HubSpot. No email will be sent.\" }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        944,
+        64
+      ],
+      "id": "734c1b34-4159-4b43-8030-fcab1b753387",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Code in JavaScript').item.json.leadEmail }}",
+        "subject": "={{ $('Code in JavaScript').item.json.emailSubject }}",
+        "emailType": "text",
+        "message": "={{ $('Code in JavaScript').item.json.emailBody }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1024,
+        -176
+      ],
+      "id": "8aba6f89-d4a1-4963-8063-af7ea4a9519c",
+      "name": "Send a message",
+      "webhookId": "a3aa7299-044e-4ba1-a278-c6ef21c8d24f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "HGLw4vtHZHrvsVW5",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Code in JavaScript').item.json.leadEmail }}",
+        "subject": "={{ $('Code in JavaScript').item.json.emailSubject }}",
+        "message": "={{ $('Code in JavaScript').item.json.emailBody }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        784,
+        240
+      ],
+      "id": "76581409-a433-4f3a-9418-4379338a1bf6",
+      "name": "Send a message1",
+      "webhookId": "ee1148b1-bb2c-479a-a51f-455842e32f7f",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "HGLw4vtHZHrvsVW5",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SLACK_BOT_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \n  channel: $('Code in JavaScript').item.json.channelId, \n  thread_ts: $('Code in JavaScript').item.json.messageTs, \n  text: \"✅ *Edited email sent successfully by \" + $('Code in JavaScript').item.json.clickedBy + \"*\\n\\nThe updated email has been delivered to the applicant.\" \n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        976,
+        240
+      ],
+      "id": "33f7b043-207b-4631-8e82-4ad83cd38e5b",
+      "name": "confirm in thread"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        64,
+        32
+      ],
+      "id": "bfbe3608-9743-405a-806f-1821472c9c7e",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"response_action\": \"clear\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        592,
+        224
+      ],
+      "id": "83a90c36-3243-4567-8c6e-57d6a2f25fc7",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"response_action\": \"clear\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        656,
+        -176
+      ],
+      "id": "44f073a7-9cfc-46fc-bc94-3f1d665cedd3",
+      "name": "Respond to Webhook2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "candid-email-approval": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        []
+      ]
+    },
+    "Send a message1": {
+      "main": [
+        [
+          {
+            "node": "confirm in thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6e6ef080-a973-4c82-b619-87d2066782ed",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0a94a587b7bf21a15c9392a16cb84177f12efc09e9d208698a75444975e1d054"
+  },
+  "id": "9R8h3iYgioPNqiRK",
+  "tags": []
+}

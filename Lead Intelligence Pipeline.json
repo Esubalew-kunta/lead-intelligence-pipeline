@@ -1,0 +1,866 @@
+{
+  "name": "Candid — Lead Intelligence Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "candid-strategy-session",
+        "options": {}
+      },
+      "id": "fd0e3bdd-d9f7-47ed-8c92-50522ae1491b",
+      "name": "Webhook — Form Submitted",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1920,
+        -400
+      ],
+      "webhookId": "ed55e35a-d779-4d31-add3-ea58f0f98224"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 1: Extract & clean all Webflow form fields ──────────────────\nconst body = $input.item.json.body || $input.item.json;\n\n// Handle various Webflow field name formats\nconst firstName  = (body.first_name  || body.firstName  || body['first-name']  || '').trim();\nconst lastName   = (body.last_name   || body.lastName   || body['last-name']   || '').trim();\nconst email      = (body.work_email  || body.email      || body['work-email']  || '').trim().toLowerCase();\nconst company    = (body.company     || '').trim();\nconst role       = (body.role        || '').trim();\nconst challenge  = (body.challenge   || body.marketing_challenge || body['what-s-your-biggest-marketing-challenge-right-now-'] || body['marketing-challenge'] || '').trim();\nconst consentRaw = body.consent || body.gdpr_consent || body['i-agree-that-candid-may-contact-me-regarding-this-request'] || false;\nconst consent    = consentRaw === true || consentRaw === 'true' || consentRaw === '1' || consentRaw === 'on';\n\n// Validate required fields\nif (!email)   throw new Error('MISSING_FIELD: work_email is required');\nif (!firstName) throw new Error('MISSING_FIELD: first_name is required');\nif (!company) throw new Error('MISSING_FIELD: company is required');\n\n// Extract domain for Apollo enrichment\nconst emailDomain = email.includes('@') ? email.split('@')[1] : '';\n\nreturn {\n  firstName,\n  lastName,\n  fullName:    `${firstName} ${lastName}`.trim(),\n  email,\n  emailDomain,\n  company,\n  role,\n  challenge,\n  consent,\n  submittedAt: new Date().toISOString()\n};"
+      },
+      "id": "0448e351-cde7-4423-864c-dd26bafb90bf",
+      "name": "Prepare Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1680,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "gdpr-01",
+              "leftValue": "={{ $json.consent }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "04907f9f-0380-4cfd-8eae-b911b467f5df",
+      "name": "GDPR Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1440,
+        -400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "dd80a90d-4165-410a-8d12-5ccb6592b7d5",
+      "name": "GDPR — Stop (No Consent)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -1312,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_HUBSPOT_PRIVATE_APP_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: $json.email }] }], properties: ['firstname','lastname','email','company','icp_score','score_tier'], limit: 1 }) }}",
+        "options": {}
+      },
+      "id": "23393d7f-3dd8-4aff-b025-c6f250d61ce5",
+      "name": "HubSpot — Check Duplicate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1200,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "dup-01",
+              "leftValue": "={{ $json.total }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f7ae0df9-37c7-48bd-937a-de303d4821c6",
+      "name": "Duplicate Router",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SLACK_BOT_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: 'C0B70CSUJ0Y', text: '🔄 *Returning Lead — Applied Again*\\n\\n*' + $('Prepare Lead Data').item.json.fullName + '* from *' + $('Prepare Lead Data').item.json.company + '*\\nEmail: ' + $('Prepare Lead Data').item.json.email + '\\nRole: ' + $('Prepare Lead Data').item.json.role + '\\n\\n*Their challenge:* \"' + $('Prepare Lead Data').item.json.challenge + '\"\\n\\n_This contact already exists in HubSpot. Please check and update the record._' }) }}",
+        "options": {}
+      },
+      "id": "04f24917-d551-4995-b50f-23365b2827ac",
+      "name": "Slack — Returning Lead Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -704,
+        -608
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.apollo.io/v1/organizations/enrich",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "YOUR_APOLLO_API_KEY"
+            },
+            {
+              "name": "domain",
+              "value": "={{ $json.emailDomain }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "ce4f6126-e739-4c72-9e80-42f20b17cc78",
+      "name": "Apollo — Enrich Company",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -720,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 3: Extract useful fields from Apollo response ────────────────\nconst response = $input.item.json;\nconst org = response.organization || {};\nconst formData = $('Prepare Lead Data').item.json;\n\n// Gracefully handle missing data\nreturn {\n  // Pass through all form data\n  ...formData,\n\n  // Apollo enrichment fields\n  apollo_employees:    org.estimated_num_employees || 'Unknown',\n  apollo_industry:     org.industry                || 'Unknown',\n  apollo_country:      org.country                 || 'Unknown',\n  apollo_revenue:      org.annual_revenue_printed   || 'Unknown',\n  apollo_linkedin:     org.linkedin_url             || '',\n  apollo_description:  (org.short_description       || '').slice(0, 400),\n  apollo_founded:      org.founded_year             || '',\n  apollo_technologies: (org.technology_names        || []).slice(0, 8).join(', '),\n  apollo_name:         org.name                     || formData.company,\n  apollo_website:      org.website_url              || '',\n  apollo_success:      !!org.name\n};"
+      },
+      "id": "53fc8965-2c12-4d6a-8db3-64617e0b2212",
+      "name": "Parse Apollo Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://news.google.com/rss/search?q={{ encodeURIComponent($json.company) }}&hl=en&gl=NL&ceid=NL:en",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; n8n)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "a22c6580-4bf1-4429-8264-3ea244be9fb5",
+      "name": "Google News — Company Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 4: Parse Google News RSS into readable bullet points ─────────\nconst prevData = $('Parse Apollo Data').item.json;\nconst response = $input.item.json;\n\nlet newsText = '';\ntry {\n  newsText = typeof response.data === 'string' ? response.data\n           : typeof response      === 'string' ? response\n           : '';\n\n  // Extract titles — handles CDATA and plain XML\n  const titleRx = /<title>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/title>/g;\n  const dateRx  = /<pubDate>(.*?)<\\/pubDate>/g;\n\n  const titles = [];\n  const dates  = [];\n  let m;\n  while ((m = titleRx.exec(newsText)) !== null) titles.push(m[1].trim());\n  while ((m = dateRx.exec(newsText))  !== null) dates.push(m[1].trim());\n\n  // Skip index 0 (feed title), take next 5\n  const items = titles.slice(1, 6).map((title, i) => {\n    const date = dates[i] ? ' (' + dates[i].slice(0, 16) + ')' : '';\n    return `• ${title.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')}${date}`;\n  });\n\n  return {\n    ...prevData,\n    news_summary: items.length ? items.join('\\n') : 'No recent news found in the last 90 days.',\n    news_count:   Math.max(0, items.length)\n  };\n} catch(e) {\n  return {\n    ...prevData,\n    news_summary: 'News search unavailable.',\n    news_count: 0\n  };\n}"
+      },
+      "id": "fcff7479-07b6-41fa-a311-6d0ccc612af9",
+      "name": "Parse News RSS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 5: Build prompts for Gemini — scoring + brief ───────────────\nconst d = $input.item.json;\n\n// ─── SCORING PROMPT ───────────────────────────────────────────────────\nconst scoringPrompt = `You are a lead scoring expert for Candid Platform, an AI-powered Live Marketing infrastructure company based in Amsterdam (Netherlands) and London (UK).\n\nCANDID'S IDEAL CUSTOMER PROFILE:\n- Company size: 200–10,000 employees (ideal), 50–200 (acceptable), under 50 (poor fit)\n- Core industries: Consumer & Retail, Financial Services, Food & Beverage, Automotive, Transportation, Manufacturing, Healthcare, Media & Communications\n- Geography: Netherlands and UK (ideal), broader EU (good), rest of world (lower priority)\n- Contact roles: CMO/Head of Marketing = 10, CEO/Founder = 9, Marketing Director = 8, Marketing Manager = 5, Brand/Comms Manager = 6, Other = 2\n- Pain points they solve: fragmented AI tools, slow campaign cycles, quarterly planning lag, briefing bottlenecks, managing too many agencies\n- Reference clients for comparison: Rabobank, AkzoNobel, Danone, Nintendo, Schiphol Airport, Albert Heijn, Alpine, ProRail\n\nLEAD DATA:\n- Full name: ${d.fullName}\n- Role: ${d.role}\n- Company: ${d.company}\n- Email domain: ${d.emailDomain}\n- Marketing challenge stated: \"${d.challenge}\"\n- Company size (Apollo): ${d.apollo_employees} employees\n- Industry (Apollo): ${d.apollo_industry}\n- Country (Apollo): ${d.apollo_country}\n- Annual revenue (Apollo): ${d.apollo_revenue}\n- Company description: ${d.apollo_description}\n- Technologies used: ${d.apollo_technologies}\n- Recent company news:\\n${d.news_summary}\n\nSCORING DIMENSIONS — score each with specific evidence from the data above:\n1. Contact Seniority (weight 25%): CMO/Head of Mktg/CEO/Founder=10, Marketing Director=8, Brand/Comms Mgr=6, Marketing Manager=5, Growth/Performance=4, Other=2\n2. Company Size (weight 20%): 200–10000 employees=10, 50–200=6, under 50=2, over 10000=7\n3. Industry Match (weight 20%): Core industries above=10, Adjacent industries=6, Other=3\n4. Geography (weight 15%): Netherlands or UK=10, EU=6, rest of world=3\n5. Buying Signals (weight 15%): Recent funding/growth/AI initiative/digital transformation news=10, some signals=5, no signals=3\n6. Red Flag Check (weight 5%): No issues=10, minor concerns=5, is a competitor/student/freelancer/no budget=1\n\nCHALLENGE KEYWORD BONUS: If their challenge mentions AI tools, campaign speed, fragmented workflows, briefing bottlenecks, content production, or agency management — add 0.5 bonus points to the final score.\n\nCALCULATION: weighted_total = (seniority×0.25) + (size×0.20) + (industry×0.20) + (geography×0.15) + (signals×0.15) + (flags×0.05) + challenge_bonus. Cap at 10.\nTIER: 8–10 = Hot, 5–7.9 = Warm, below 5 = Cold\n\nRETURN ONLY VALID JSON — no markdown, no text outside the JSON:\n{\"score_seniority\":0,\"score_size\":0,\"score_industry\":0,\"score_geography\":0,\"score_signals\":0,\"score_flags\":0,\"challenge_bonus\":0,\"weighted_total\":0,\"tier\":\"Warm\",\"evidence\":\"...\",\"product_recommendation\":\"...\",\"product_reasoning\":\"...\",\"opening_line\":\"...\",\"key_objections\":\"...\"}`;\n\n// ─── BRIEF PROMPT ────────────────────────────────────────────────────\nconst briefPrompt = `You are a senior sales consultant at Candid Platform writing a pre-call brief for a strategy session.\n\nABOUT CANDID: AI-powered Live Marketing infrastructure for enterprise brands. Products: Gateway (central AI workspace), Cortex (automated workflows + digital employees), Studio (AI creative production), mJourney (location signals), RLVNT (real-time media buying), GENRTR (DTC commerce engine). Clients: Rabobank, Nintendo, AkzoNobel, Danone, Schiphol.\n\nLEAD:\nName: ${d.fullName} | Role: ${d.role} | Company: ${d.company}\nEmail: ${d.email} | Submitted: ${d.submittedAt}\nMarketing Challenge: \"${d.challenge}\"\nCompany: ${d.apollo_employees} employees | ${d.apollo_industry} | ${d.apollo_country}\nDescription: ${d.apollo_description}\nTechnologies: ${d.apollo_technologies}\nRecent news:\\n${d.news_summary}\n\nWrite a sharp pre-call brief under 450 words with these exact sections:\n\n## WHO THIS IS\n2 sentences: who this person is and their decision-making influence.\n\n## THEIR COMPANY\n3 sentences: what they do, scale, why Live Marketing is relevant for them specifically.\n\n## RECENT NEWS\nUp to 3 bullet points of most relevant recent developments with brief commentary on what each means for the call.\n\n## WHY THEY APPLIED\nYour interpretation connecting their stated challenge to Candid's value proposition. Be specific.\n\n## RECOMMENDED PRODUCT\nOne sentence: which Candid product fits best and exactly why.\n\n## CALL OPENING LINE\nOne word-for-word sentence to open the call with — reference their specific challenge.\n\n## PREPARE FOR THESE OBJECTIONS\n2–3 likely objections with a brief counter-argument for each.\n\nWrite in Candid's voice: direct, confident, smart. No fluff, no buzzwords, no filler sentences.`;\n\nreturn {\n  ...d,\n  scoringPrompt,\n  briefPrompt\n};"
+      },
+      "id": "e9ffb65e-2cbb-4d05-b78b-c31253040e72",
+      "name": "Build AI Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 6: Parse Gemini scoring response ────────────────────────────\nconst geminiResponse = $input.item.json;\nconst context = $('Build AI Context').item.json;\nlet scoreData;\n\ntry {\n  const text = geminiResponse.choices[0].message.content;\n  // Strip markdown code fences if Gemini adds them\n  const clean = text.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  // Extract JSON object from response\n  const jsonMatch = clean.match(/\\{[\\s\\S]*\\}/);\n  if (!jsonMatch) throw new Error('No JSON object found in response');\n  scoreData = JSON.parse(jsonMatch[0]);\n\n  // Re-validate tier based on actual score (safety check)\n  const score = parseFloat(scoreData.weighted_total) || 5;\n  const cappedScore = Math.min(10, Math.max(1, score));\n  scoreData.weighted_total = Math.round(cappedScore * 10) / 10;\n  if (cappedScore >= 8)     scoreData.tier = 'Hot';\n  else if (cappedScore >= 5) scoreData.tier = 'Warm';\n  else                       scoreData.tier = 'Cold';\n\n} catch(e) {\n  scoreData = {\n    score_seniority: 5,\n    score_size: 5,\n    score_industry: 5,\n    score_geography: 5,\n    score_signals: 5,\n    score_flags: 10,\n    challenge_bonus: 0,\n    weighted_total: 5,\n    tier: 'Warm',\n    evidence: 'AI scoring unavailable - manual review required. Error: ' + e.message,\n    product_recommendation: 'Full Live Marketing Partnership',\n    product_reasoning: 'Default - pending manual review.',\n    opening_line: \"Thank you for your interest in Candid - I would love to learn more about your current marketing setup.\",\n    key_objections: 'Manual review required'\n  };\n}\n\n// Pass through ALL context for the brief generation step\nreturn { ...context, ...scoreData };"
+      },
+      "id": "422b2d38-b54d-4594-98a6-c550dd4648cc",
+      "name": "Parse Score Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1696,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 7: Parse brief + build email draft template ─────────────────\nconst geminiResponse = $input.item.json;\nconst scoreData = $('Parse Score Response').item.json;\nconst d = scoreData;\n\n// Parse brief text from AI\nlet briefText = '';\ntry {\n  briefText = geminiResponse.choices[0].message.content || '';\n} catch(e) {\n  briefText = '# Pre-Call Brief\\n\\nBrief generation failed. Please review this lead manually.\\n\\n**Lead:** ' + d.fullName + '\\n**Company:** ' + d.company + '\\n**Challenge:** ' + d.challenge;\n}\n\n// ── Build email draft template ────────────────────────────────────────\nconst tier = d.tier;\nconst firstName = d.firstName;\nconst company = d.company;\nconst challenge = d.challenge || 'your current marketing challenges';\n\nconst urgencyLine = tier === 'Hot'\n  ? 'Given the strong fit we can see, someone from our team will be in touch with you very shortly.'\n  : 'Our team will review your application and be in touch within 2 business days.';\n\nconst challengeRef = challenge.length > 10\n  ? 'Based on what you shared about your marketing challenge, you will find the Framework particularly relevant - especially the infrastructure and governance sections.'\n  : 'You will find the Framework especially useful as a starting point for our conversation.';\n\nconst emailSubject = 'Your Live Marketing Strategy Session - ' + company;\n\nconst emailBody = 'Hi ' + firstName + ',\\n\\n'\n  + 'Thank you for applying for a Live Marketing Strategy Session.\\n\\n'\n  + challengeRef + '\\n\\n'\n  + 'You can read our thinking on why the campaign cycle is over and what replaces it here: https://www.candidplatform.com\\n\\n'\n  + urgencyLine + '\\n\\n'\n  + 'Looking forward to the conversation.\\n\\n'\n  + 'The Candid Team';\n\nreturn {\n  ...scoreData,\n  brief_text:         briefText,\n  brief_generated_at: new Date().toISOString(),\n  email_subject:      emailSubject,\n  email_body:         emailBody\n};"
+      },
+      "id": "f1b6eb95-2254-4c1e-b2cb-c903afd6f2e4",
+      "name": "Parse Brief + Draft Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1216,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_HUBSPOT_PRIVATE_APP_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { firstname: $json.firstName, lastname: $json.lastName, email: $json.email, company: $json.company, jobtitle: $json.role, icp_score: String($json.weighted_total), score_tier: $json.tier, marketing_challenge: $json.challenge, pre_call_brief_url: 'Generated — see notes', enrichment_status: $json.apollo_success ? 'Enriched via Apollo' : 'Manual enrichment needed', hs_lead_status: 'NEW' } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "6e316246-1efe-43e2-b181-da5b03856f60",
+      "name": "HubSpot — Create Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -976,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/deals",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_HUBSPOT_PRIVATE_APP_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { dealname: 'Strategy Session — ' + $json.company, dealstage: 'appointmentscheduled', pipeline: 'default', description: 'ICP Score: ' + $json.weighted_total + '/10 (' + $json.tier + ')\\nRole: ' + $json.role + '\\nChallenge: ' + $json.challenge, hs_priority: $json.tier === 'Hot' ? 'high' : $json.tier === 'Warm' ? 'medium' : 'low' } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "fa34deaa-bbed-4a95-9bf0-0eaf4a848faa",
+      "name": "HubSpot — Create Deal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -736,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── STEP 8: Build tier-specific Slack messages ───────────────────────\nconst d = $('Parse Brief + Draft Email').item.json;\nconst score = d.weighted_total;\nconst tier  = d.tier;\n\n// ─── Score breakdown for brief ────────────────────────────────────────\nconst scoreBreakdown = `Seniority: ${d.score_seniority}/10 · Size: ${d.score_size}/10 · Industry: ${d.score_industry}/10 · Geography: ${d.score_geography}/10 · Signals: ${d.score_signals}/10`;\n\n// ─── Hot Lead Message ─────────────────────────────────────────────────\nconst hotMessage = `🔥 *HOT LEAD — Score: ${score}/10*\\n\\n*${d.fullName}* | ${d.role} | *${d.company}*\\n🏢 ${d.apollo_employees} employees · ${d.apollo_industry} · ${d.apollo_country}\\n\\n💬 *Their challenge:* \"${d.challenge}\"\\n\\n✅ *Product fit:* ${d.product_recommendation}\\n📞 *Open with:* ${d.opening_line}\\n⚠️ *Objections to prep:* ${d.key_objections}\\n\\n📊 *Score breakdown:* ${scoreBreakdown}\\n💡 *Evidence:* ${d.evidence}\\n\\n⚡ _High priority — follow up as soon as possible._`;\n\n// ─── Warm Lead Message ────────────────────────────────────────────────\nconst warmMessage = `📋 *New Lead — Score: ${score}/10 (Warm)*\\n\\n*${d.fullName}* | ${d.role} | *${d.company}*\\n🏢 ${d.apollo_employees} employees · ${d.apollo_industry} · ${d.apollo_country}\\n\\n💬 *Their challenge:* \"${d.challenge}\"\\n✅ *Product fit:* ${d.product_recommendation}\\n\\n📊 *Score breakdown:* ${scoreBreakdown}\\n💡 ${d.evidence}`;\n\n// ─── Email Approval Message ───────────────────────────────────────────\nconst emailApprovalMessage = `✉️ *Email Approval Required*\\n\\n*Lead:* ${d.fullName} from *${d.company}* (Score: ${score}/10 — ${tier})\\n\\n*Proposed confirmation email:*\\n───────────────────────────\\n*Subject:* ${d.email_subject}\\n\\n${d.email_body}\\n───────────────────────────\\n\\n✅ React with :white_check_mark: to approve and send\\n✏️ Reply to this message to request changes\\n\\n_If no action in 4 hours, this will escalate to the manager._\\n_Auto-reminder will fire at the 2-hour mark for Hot leads._`;\n\nconst shouldSendTeamAlert = tier === 'Hot' || tier === 'Warm';\nconst teamChannel = tier === 'Hot'\n  ? 'C0B5ZPANA4T'\n  : 'C0B70CSUJ0Y';\n\nreturn {\n  ...d,\n  hot_message:            hotMessage,\n  warm_message:           warmMessage,\n  email_approval_message: emailApprovalMessage,\n  should_send_team_alert: shouldSendTeamAlert,\n  team_slack_channel:     teamChannel,\n  team_slack_message:     tier === 'Hot' ? hotMessage : warmMessage\n};"
+      },
+      "id": "c3a07466-be2c-49e4-ab59-acd6871ab840",
+      "name": "Prepare Slack Alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "alert-01",
+              "leftValue": "={{ $json.should_send_team_alert }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8fd63a61-baa1-4c87-8bde-281ca8ddc1ce",
+      "name": "Team Alert Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SLACK_BOT_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel: $json.team_slack_channel, text: $json.team_slack_message, unfurl_links: false }) }}",
+        "options": {}
+      },
+      "id": "b624908b-9b08-40d2-bfb2-620ac924a6eb",
+      "name": "Slack — Team Alert (Hot/Warm)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -16,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SLACK_BOT_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  channel: \"C0B70DT4132\",\n  blocks: [\n    {\n      type: \"header\",\n      text: { type: \"plain_text\", text: \"✉️ Email Approval Required\", emoji: true }\n    },\n    {\n      type: \"section\",\n      fields: [\n        { type: \"mrkdwn\", text: \"*Lead:*\\n\" + $('Prepare Slack Alerts').item.json.fullName },\n        { type: \"mrkdwn\", text: \"*Company:*\\n\" + $('Prepare Slack Alerts').item.json.company },\n        { type: \"mrkdwn\", text: \"*Role:*\\n\" + $('Prepare Slack Alerts').item.json.role },\n        { type: \"mrkdwn\", text: \"*Score:*\\n\" + $('Prepare Slack Alerts').item.json.weighted_total + \"/10 — \" + $('Prepare Slack Alerts').item.json.tier }\n      ]\n    },\n    {\n      type: \"section\",\n      text: { type: \"mrkdwn\", text: \"*Their challenge:*\\n\\\"\" + $('Prepare Slack Alerts').item.json.challenge + \"\\\"\" }\n    },\n    {\n      type: \"divider\"\n    },\n    {\n      type: \"section\",\n      text: { type: \"mrkdwn\", text: \"*Proposed email:*\\n*Subject:* \" + $('Prepare Slack Alerts').item.json.email_subject + \"\\n\\n\" + $('Prepare Slack Alerts').item.json.email_body }\n    },\n    {\n      type: \"divider\"\n    },\n    {\n      type: \"actions\",\n      elements: [\n        {\n          type: \"button\",\n          text: { type: \"plain_text\", text: \"✅ Approve & Send\", emoji: true },\n          style: \"primary\",\n          value: \"approve|\" + $('Prepare Slack Alerts').item.json.email,\n          action_id: \"approve_email\"\n        },\n        {\n          type: \"button\",\n          text: { type: \"plain_text\", text: \"✏️ Edit First\", emoji: true },\n          value: \"edit|\" + $('Prepare Slack Alerts').item.json.email,\n          action_id: \"edit_email\"\n        },\n        {\n          type: \"button\",\n          text: { type: \"plain_text\", text: \"❌ Reject\", emoji: true },\n          style: \"danger\",\n          value: \"reject|\" + $('Prepare Slack Alerts').item.json.email,\n          action_id: \"reject_email\"\n        }\n      ]\n    },\n    {\n      type: \"context\",\n      elements: [\n        { type: \"mrkdwn\", text: \"⏰ Auto-escalates to manager after 4 hours if no action taken\" }\n      ]\n    }\n  ]\n}) }}",
+        "options": {}
+      },
+      "id": "3984a3e6-6c27-4aae-884c-be0f8d12cc90",
+      "name": "Slack — Email Approval (Hot/Warm)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://slack.com/api/chat.postMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SLACK_BOT_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  type: \"actions\",\n  elements: [\n    {\n      type: \"button\",\n      text: { type: \"plain_text\", text: \"✅ Approve & Send\", emoji: true },\n      style: \"primary\",\n      value: \"approve|\" + $('Prepare Slack Alerts').item.json.email,\n      action_id: \"approve_email\"\n    },\n    {\n      type: \"button\",\n      text: { type: \"plain_text\", text: \"✏️ Edit First\", emoji: true },\n      value: \"edit|\" + $('Prepare Slack Alerts').item.json.email,\n      action_id: \"edit_email\"\n    },\n    {\n      type: \"button\",\n      text: { type: \"plain_text\", text: \"❌ Reject\", emoji: true },\n      style: \"danger\",\n      value: \"reject|\" + $('Prepare Slack Alerts').item.json.email,\n      action_id: \"reject_email\"\n    }\n  ]\n},",
+        "options": {}
+      },
+      "id": "47016dc5-fe5e-4ca8-958e-45f967b0e613",
+      "name": "Slack — Email Approval (Cold)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_GROQ_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"openai/gpt-oss-120b\", messages: [{ role: \"user\", content: $json.scoringPrompt }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "6f8c5c43-7b55-434b-b8d6-6a0337a51617",
+      "name": "AI - Score Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_GROQ_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"openai/gpt-oss-120b\", messages: [{ role: \"user\", content: $json.briefPrompt }] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "863f6b48-2daf-443e-9ad5-112a5dd434e5",
+      "name": "AI - Write Brief",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1456,
+        -16
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook — Form Submitted": {
+      "main": [
+        [
+          {
+            "node": "Prepare Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Lead Data": {
+      "main": [
+        [
+          {
+            "node": "GDPR Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GDPR Gate": {
+      "main": [
+        [
+          {
+            "node": "HubSpot — Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "GDPR — Stop (No Consent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot — Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Duplicate Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate Router": {
+      "main": [
+        [
+          {
+            "node": "Slack — Returning Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Apollo — Enrich Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apollo — Enrich Company": {
+      "main": [
+        [
+          {
+            "node": "Parse Apollo Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Apollo Data": {
+      "main": [
+        [
+          {
+            "node": "Google News — Company Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google News — Company Search": {
+      "main": [
+        [
+          {
+            "node": "Parse News RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse News RSS": {
+      "main": [
+        [
+          {
+            "node": "Build AI Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Context": {
+      "main": [
+        [
+          {
+            "node": "AI - Score Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Score Response": {
+      "main": [
+        [
+          {
+            "node": "AI - Write Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Brief + Draft Email": {
+      "main": [
+        [
+          {
+            "node": "HubSpot — Create Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot — Create Contact": {
+      "main": [
+        [
+          {
+            "node": "HubSpot — Create Deal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot — Create Deal": {
+      "main": [
+        [
+          {
+            "node": "Prepare Slack Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Slack Alerts": {
+      "main": [
+        [
+          {
+            "node": "Team Alert Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Team Alert Check": {
+      "main": [
+        [
+          {
+            "node": "Slack — Team Alert (Hot/Warm)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack — Email Approval (Cold)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack — Team Alert (Hot/Warm)": {
+      "main": [
+        [
+          {
+            "node": "Slack — Email Approval (Hot/Warm)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI - Score Lead": {
+      "main": [
+        [
+          {
+            "node": "Parse Score Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI - Write Brief": {
+      "main": [
+        [
+          {
+            "node": "Parse Brief + Draft Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6fad12d3-ea58-42c7-95fc-43f3c0ad147d",
+  "meta": {
+    "instanceId": "0a94a587b7bf21a15c9392a16cb84177f12efc09e9d208698a75444975e1d054"
+  },
+  "id": "HZuJ2OyDTLtlexBd",
+  "tags": [
+    {
+      "updatedAt": "2026-05-26T10:39:48.208Z",
+      "createdAt": "2026-05-26T10:39:48.208Z",
+      "id": "696in5iOTBeInXTW",
+      "name": "lead-intelligence"
+    },
+    {
+      "updatedAt": "2026-05-26T10:39:48.239Z",
+      "createdAt": "2026-05-26T10:39:48.239Z",
+      "id": "JWv3arqFcP6PfJDR",
+      "name": "candid"
+    },
+    {
+      "updatedAt": "2026-05-26T10:39:48.263Z",
+      "createdAt": "2026-05-26T10:39:48.263Z",
+      "id": "WYK71bmAaibqtYgO",
+      "name": "production"
+    }
+  ]
+}
