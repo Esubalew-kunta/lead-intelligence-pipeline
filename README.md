@@ -1,6 +1,6 @@
 # Lead Intelligence Pipeline
 
-> n8n automation that turns a raw inbound form submission into a scored lead, a pre-call brief, a CRM record, and a human-approved confirmation email — before a sales rep opens their laptop.
+An n8n automation that takes a raw inbound form submission and turns it into a scored lead, a pre-call brief, a CRM record, and a human-approved confirmation email before a sales rep even opens their laptop.
 
 ---
 
@@ -10,55 +10,56 @@
 
 ---
 
-## What it does — STAR
+## What it does (STAR)
 
 ### Situation
 
-B2B sales teams that run discovery or strategy sessions get inbound requests through a website form. Before a pipeline like this, every submission meant manual work: look up the company, check if the contact already exists in the CRM, judge how qualified the lead is, and write a follow-up email from scratch. A rep could burn 30–45 minutes per lead — before knowing if it was worth a call at all.
+B2B sales teams that run discovery or strategy sessions get inbound requests through a website form. Every submission used to mean manual work: look up the company, check if the contact already exists in the CRM, judge how qualified the lead is, write a follow-up email from scratch. A rep could burn 30 to 45 minutes per lead before knowing if it was worth a call at all.
 
 ### Task
 
-Every new form submission needed to be processed without manual intervention:
-- validated and GDPR-checked before any data moves
-- deduplicated against the existing CRM
-- enriched with company-level data — headcount, industry, revenue, tech stack
-- scored against a defined ideal customer profile across six weighted dimensions
-- accompanied by a written pre-call brief covering who the contact is, why they reached out, which offering fits best, and what objections to expect
-- logged in the CRM as a contact and a deal
-- escalated to the right team channel based on score tier
-- held in a human-approval step before any confirmation email goes out to the lead
+Every new form submission needed to flow through a set of checks and actions without anyone touching it:
+
+- Validate the data and confirm GDPR consent before anything moves
+- Check for duplicates in the CRM
+- Pull company data from a third-party enrichment API
+- Score the lead against a defined ideal customer profile
+- Write a pre-call brief with context on who the person is, why they reached out, and what to expect
+- Log a contact and a deal in the CRM
+- Alert the sales team in Slack with the right level of urgency
+- Hold the confirmation email for human review before it goes out
 
 ### Action
 
-Two n8n workflows handle this end to end:
+Two n8n workflows handle this from start to finish.
 
-**Workflow 1 — Lead Intelligence Pipeline**
+**Workflow 1: Lead Intelligence Pipeline**
 
-1. **Webhook** receives the form POST from the website
-2. **Prepare Lead Data** extracts and sanitizes all fields; throws a named error if required fields are missing
-3. **GDPR Gate** stops the run entirely if the applicant did not tick consent — no data is stored, no record is created
-4. **CRM Duplicate Check** queries existing contacts by email; duplicate submissions fire a Slack alert to the team and exit cleanly without creating a duplicate record
-5. **Company Enrichment** pulls headcount, industry, country, annual revenue, description, and tech stack from the email domain via the Apollo.io API
-6. **Google News** fetches the five most recent headlines about the company via RSS
-7. **Build Context** assembles two structured prompts — one for scoring, one for the brief — combining form data, enrichment fields, and news headlines
-8. **Score Lead** sends the scoring prompt to an LLM and gets back a JSON object with scores across six dimensions plus a weighted total out of 10 and a tier label: Hot / Warm / Cold
-9. **Write Brief** sends the brief prompt to the LLM and gets back a structured pre-call document: who the person is, what their company does, relevant recent news, why they applied, which product fits best, a word-for-word opening line, and two to three likely objections with counters
-10. **CRM Contact + Deal** writes the enriched record and opens a deal at the right priority level
-11. **Prepare Slack Alerts** builds tier-specific messages — Hot leads get a full breakdown with score evidence and a suggested opening line; Warm leads get a condensed version
-12. **Slack Team Alert** posts to the priority channel for Hot leads, the general channel for Warm
-13. **Slack Email Approval** posts the draft confirmation email as an interactive Block Kit message with Approve, Edit, and Reject buttons
+1. A webhook receives the form POST from the website
+2. Lead data is extracted and sanitized. Missing required fields throw a named error
+3. A GDPR gate checks for consent. If it is missing, the workflow stops and nothing is stored
+4. The CRM is queried by email to catch duplicates. Returning leads trigger a Slack alert and the workflow exits without creating a duplicate record
+5. The email domain is sent to Apollo.io to pull company headcount, industry, country, revenue, description, and tech stack
+6. Google News RSS is queried for the five most recent headlines about the company
+7. Two prompts are assembled using all the data collected so far: one for scoring, one for the brief
+8. The scoring prompt is sent to an LLM which returns a JSON object with dimension scores, a weighted total out of 10, and a tier label: Hot, Warm, or Cold
+9. The brief prompt is sent to the same LLM which returns a structured pre-call document covering who the person is, what their company does, relevant news, why they applied, which product fits, a suggested opening line, and likely objections with counters
+10. A contact and a deal are created in the CRM with the enrichment and score data attached
+11. Slack messages are built based on the tier. Hot leads get the full breakdown with evidence. Warm leads get a shorter version
+12. The team is alerted in Slack in the right channel based on score tier
+13. The draft confirmation email is posted to a Slack approval channel as a Block Kit message with Approve, Edit, and Reject buttons
 
-**Workflow 2 — Email Approval Handler**
+**Workflow 2: Email Approval Handler**
 
-Listens for Slack button interactions on the approval message:
+Listens for button clicks on the approval message in Slack:
 
-- **Approve** — posts a thread confirmation and sends the email immediately
-- **Edit** — opens a Slack modal pre-filled with the subject and body; on submit, sends the revised version and confirms in-thread
-- **Reject** — logs the rejection in-thread; no email is sent
+- Approve sends the email immediately and posts a confirmation in the thread
+- Edit opens a Slack modal pre-filled with the subject and body. On submit, the revised version is sent and confirmed in-thread
+- Reject logs the decision in-thread and no email goes out
 
 ### Result
 
-A sales rep gets a Slack message within seconds of a form submission — complete with a score, enriched company data, a full pre-call brief, and a one-click send on the confirmation email. Hot leads surface immediately with everything needed for the call. Cold leads are logged without creating noise. No manual research, no copy-pasting, no missed follow-ups.
+A sales rep gets a Slack message within seconds of a form submission. It has the score, the enriched company data, the full pre-call brief, and a one-click send on the confirmation email. Hot leads surface right away with everything needed for the call. Cold leads get logged without creating noise. No manual research, no copy-pasting, no missed follow-ups.
 
 ---
 
@@ -68,10 +69,10 @@ A sales rep gets a Slack message within seconds of a form submission — complet
 |---|---|
 | Automation runtime | n8n |
 | Form capture | Webhook (any form provider) |
-| CRM | HubSpot (Contacts + Deals) |
+| CRM | HubSpot (Contacts and Deals) |
 | Company enrichment | Apollo.io Organizations API |
 | News | Google News RSS |
-| LLM scoring + briefs | Groq API |
+| LLM scoring and briefs | Groq API |
 | Team notifications | Slack Block Kit |
 | Email delivery | Gmail via OAuth2 |
 
@@ -81,8 +82,8 @@ A sales rep gets a Slack message within seconds of a form submission — complet
 
 | File | Description |
 |---|---|
-| `Lead Intelligence Pipeline.json` | Main pipeline — form intake through Slack alert |
-| `email-approval.json` | Slack interaction handler — approve, edit, or reject the outbound email |
+| `Lead Intelligence Pipeline.json` | Main pipeline from form intake to Slack alert |
+| `email-approval.json` | Slack interaction handler for approve, edit, and reject |
 
 ---
 
@@ -95,24 +96,24 @@ A sales rep gets a Slack message within seconds of a form submission — complet
    - Groq API key
    - Slack bot token (scopes: `chat:write`, `views:open`)
    - Gmail OAuth2
-3. Update the scoring prompt in the **Build Context** node to match your ideal customer profile
+3. Update the scoring prompt in the Build Context node to match your ideal customer profile
 4. Point your website form to the webhook URL: `/webhook/lead-intake`
-5. Point your Slack app's Interactivity Request URL to: `/webhook/email-approval`
+5. Point your Slack app Interactivity Request URL to: `/webhook/email-approval`
 6. Activate both workflows
 
 ---
 
-## Lead Scoring Dimensions
+## Lead Scoring
 
-The scoring model is fully configurable in the **Build Context** node. The default weights are:
+The scoring model lives in the Build Context node and is fully editable. Default setup:
 
-| Dimension | Weight | Logic |
+| Dimension | Weight | Notes |
 |---|---|---|
-| Contact Seniority | 25% | Decision-maker roles score highest |
-| Company Size | 20% | Configurable headcount range |
-| Industry Match | 20% | Define your target verticals |
+| Contact seniority | 25% | Decision-maker roles score highest |
+| Company size | 20% | Set your target headcount range |
+| Industry match | 20% | Define your target verticals |
 | Geography | 15% | Define your target markets |
-| Buying Signals | 15% | Recent funding, growth, or digital transformation news |
-| Red Flag Check | 5% | Filters competitors, students, freelancers |
+| Buying signals | 15% | Funding, growth news, or digital investment announcements |
+| Red flag check | 5% | Filters out competitors, students, and freelancers |
 
-A keyword bonus applies if the stated challenge aligns with specific pain points you define.
+A keyword bonus adds points if the stated challenge aligns with the pain points you care about.
