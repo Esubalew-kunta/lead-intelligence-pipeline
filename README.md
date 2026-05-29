@@ -117,3 +117,19 @@ The scoring model lives in the Build Context node and is fully editable. Default
 | Red flag check | 5% | Filters out competitors, students, and freelancers |
 
 A keyword bonus adds points if the stated challenge aligns with the pain points you care about.
+
+
+demo request 
+
+https://esubalewk.app.n8n.cloud/webhook-test/candid-strategy-session
+
+
+{
+  "first_name": "Thomas",
+  "last_name": "de Vries",
+  "work_email": "m.vandenberg@coolblue.nl",
+  "company": "Coolblue",
+  "role": "CMO / Head of Marketing",
+  "challenge": "We are running 14 different AI tools across the team with zero central governance. Our campaign briefing cycle takes 3 weeks and by the time content is live the trend has passed. We need to move at market speed without losing brand control.",
+  "consent": true
+}
