@@ -6,7 +6,7 @@ An n8n automation that takes a raw inbound form submission and turns it into a s
 
 ## Watch it run
 
-[![Watch the walkthrough](https://img.shields.io/badge/▶_Watch_Demo-Video-red?style=for-the-badge)](YOUR_VIDEO_LINK_HERE)
+[![Watch the walkthrough](https://img.shields.io/badge/▶_Watch_Demo-Video-red?style=for-the-badge)](https://youtu.be/5WJ6IwMcZaQ)
 
 ---
 
