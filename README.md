@@ -125,10 +125,10 @@ https://esubalewk.app.n8n.cloud/webhook-test/candid-strategy-session
 
 
 {
-  "first_name": "Thomas",
-  "last_name": "de Vries",
-  "work_email": "m.vandenberg@coolblue.nl",
-  "company": "Coolblue",
+  "first_name": "[sender naem here]",
+  "last_name": "[sender name here]",
+  "work_email": "[client email here]",
+  "company": "[company name here]",
   "role": "CMO / Head of Marketing",
   "challenge": "We are running 14 different AI tools across the team with zero central governance. Our campaign briefing cycle takes 3 weeks and by the time content is live the trend has passed. We need to move at market speed without losing brand control.",
   "consent": true
